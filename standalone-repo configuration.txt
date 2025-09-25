@@ -1,0 +1,35 @@
+- Create a mount point:
+$ sudo mkdir -p /mnt/iso
+
+- Mount dvd image to new mount point:
+$ sudo mount -o loop /path/to/dvd-iso /mnt/iso
+
+- Verify files are present:
+$ ls -l /mnt/iso/
+
+- Create repo file:
+$ sudo nano /etc/yum.repos.d/local-repo-file.repo
+
+# Add the following info(for simplicity):
+
+[BaseOS]
+name=RHEL 9.x BaseOS
+baseurl=file:///mnt/iso/BaseOS
+enabled=1
+gpgcheck=0
+
+
+[AppStream]
+name=RHEL 9.x AppStream
+baseurl=file:///mnt/iso/AppStream
+enabled=1
+gpgcheck=0
+
+# Save & Exit
+
+- Clean & make new cache file:
+$ sudo dnf clean all
+$ sudo dnf makecache
+
+- Attempt to install a package:
+$ sudo dnf update

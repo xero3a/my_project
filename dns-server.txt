@@ -1,0 +1,139 @@
+- Configure Full Qualified Domain Name (FQDN)
+$ hostnamectl set-hostname vm-name.local.lab
+
+- Verify FQDN is present
+$ hostnamectl
+
+- Modify the conenction settings:
+$ sudo nmcli connection modify enp1s0 ipv4.address 192.168.0.10/24
+$ sudo nmcli connection modify enp1s0 ipv4.gateway 192.168.0.1
+$ sudo nmcli connection modify enp1s0 ipv4.dns 192.168.0.11
+$ sudo nmcli connection modify enp1s0 ipv4.method manual
+$ sudo nmcli connection down enp1s0
+$ sudo nmcli connection up enp1s0
+
+- Verify changes:
+$ ip addr
+$ nmcli connection show
+
+- Configure DNS utilities:
+$ sudo dnf info bind-utils
+$ sudo dnf info bind
+$ sudo donf info bind-dnssec-utils
+$ sudo dnf install <package>
+
+- Configure "named" (BIND):	# "dnsmasq" can be used for lightweight dns-forwarding on smaller networks.  "named" is typically used on larger networks.
+$ sudo nano /etc/named.conf
+
+> configure listening interfaces:
+listen-on port 53 { consult man pages for specific setup; };  [any = all vlans/subnets; 
+listen-on-v6 port 53 { ::1; };
+...
+allow-query	{ <network-addresses/mask>;};		[any = all vlans/subnets]
+recursion yes;
+
+> add zone info:
+zone "local.lab" IN {
+      type master;
+      file "/var/named/local.lab.zone";
+      allow-update { none; };
+};
+Save & Exit
+
+- Create your zone file:
+$ sudo nano /var/named/local.lab.zone
+> add SOA, NS, and A records:
+$TTL 1D
+@   IN SOA ns1.local.lab. admin.local.lab. (
+        2025090601 ; serial
+        1D         ; refresh
+        1H         ; retry
+        1W         ; expire
+        3H )       ; minimum
+@   IN NS  ns1.local.lab.
+ns1 IN A   192.168.0.10
+vm1 IN A   192.168.0.11
+
+> create reverse zones if needed:
+$ sudo nano /var/named/reverse-ip-address.in-addr.arpa.zone (Example: 0.168.192.in-addr.arpa.zone)
+
+$TTL 1D
+@   IN SOA ns1.local.lab. user.local.lab. (
+        2025090601 ; serial (YYYYMMDDnn)
+        1D         ; refresh
+        1H         ; retry
+        1W         ; expire
+        3H )       ; minimum
+@   IN NS  ns1.local.lab.
+
+; PTR records (reverse lookups)
+10  IN PTR ns1.local.lab.	# record for host 1 ..etc
+11  IN PTR vm1.local.lab.	# record for host 2 ..etc
+Save & Exit
+
+- Add reverse zone to the /etc/named.conf:
+ zone "0.168.192.in-addr.arpa" IN {
+    type master;
+    file "/var/named/0.168.192.in-addr.arpa.zone";
+    allow-update { none; };
+};
+>
+
+- Adjust firewall rules:
+$ sudo firewall-cmd --add-service=dns --permanent
+$ sudo firewall-cmd --reload
+$ sudo setsebool -P named_write_master_zones on
+
+- Start and enable service:
+$ sudo systemctl enable --now named
+$ sudo systemctl status named
+
+- Verify local connectivity:
+$ dig @127.0.0.1 server1.local.lab
+$ dig @<ip> server2.local.lab
+
+- Modify /etc/hosts file for network associations:
+$ sudo nano /etc/hosts
+~ <host-ip>	<domain-name> 
+~ <host-ip>	<FQDN> # (optional) if needed for a specific service or server association
+Save & Exit
+
+- Configure local repo if one isn't available yet:
+$ sudo mkdir -p /mnt/iso
+$ sudo mount -o loop /path/to/dvd.iso
+
+- Track the file paths to the package directories:
+$ sudo ls -l
+>  This will be used to create your repo
+
+- Configure repo file:
+$ sudo nano /etc/yum.repos.d/local-repo
+
+[local]
+name=DVD.iso version or any other name you want to create
+baseurl=file:///mnt/iso/repo-package
+enabled=1
+gpgcheck=0
+Save & Quit
+
+- Verify the repo functions:
+$ sudo dnf clean all
+$ sudo dnf makecache
+$ sudo dnf update
+
+- Configure your NTP source if available:
+$ sudo /etc/chrony.conf
+> add or uncomment lines if not already present:
+server <ntp-ip> iburst
+driftfile /var/lib/chrony/drift
+makestep 1.0.3
+logdir /var/log/chrony
+Save & Exit
+
+- Restart chronyd service:
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable chronyd 
+$ sudo systemctl status chronyd
+
+- Verify ntp source:
+$ sudo chronyc sources -v

@@ -1,0 +1,301 @@
+- Configure hostname:
+$ hostnamectl set-hostname <name>
+
+- Configure IP address:
+$ sudo nmcli connection modify enp1s0 ipv4.address <ip-address/mask>
+$ sudo nmcli connection modify enp1s0 ipv4.dns <dns-ip>
+$ sudo nmcli connection modify enp1s0 ipv4.gateway <gateway-ip>
+$ sudo nmcli connection modify enp1s0 ipv4.method manual
+$ sudo nmcli connection down enp1s0
+$ sudo nmcli connection up enp1s0
+
+- Test connectivity with a network system:
+$ ping <ip-address>
+
+- Download the repo files to a system with internet connectivity:
+# Sync BaseOS
+$ sudo mkdir -p /srv/mirror/baseos
+$ sudo dnf reposync --repoid=rhel-9-for-x86_64-baseos-rpms \
+    --download-metadata --downloadcomps \
+    --destdir=/srv/mirror/baseos
+
+# Sync AppStream
+$ sudo mkdir -p /srv/mirror/appstream
+$ sudo dnf reposync --repoid=rhel-9-for-x86_64-appstream-rpms \
+    --download-metadata --downloadcomps \
+    --destdir=/srv/mirror/appstream
+
+- Copy the /srv/mirror/ tree to the repo-server:
+$ rsync -avh --progress /srv/mirror/ user@repo-server:/tmp/mirror-temp
+
+# On your repo-server...
+- Copy files from the /tmp/mirror/ to /var/.../mirror/
+$ sudo rsync -avh --progress /tmp/mirror /var/www/html/repos/mirror/
+$ sudo rm -rf /tmp/mirror-temp
+
+- Correct you SELinux and permissions:
+$ sudo semanage fcontext -a -t httpd_sys_content_t '/var/www/html/repos(/.*)?'
+$ sudo restorecon -Rv /var/www/html/repos
+
+- Change ownership of /var/...repos
+$ sudo chown -R apache:apache /var/www/html/repos
+$ sudo chmod -R 755 /var/www/html/repos
+
+- Verify directories are populated:
+$ sudo ls -l /var/www/html/repos/mirror/
+
+- Check system state:
+>
+# 1) Basic system info
+$ uname -a
+$ cat /etc/os-release
+
+# 2) Check disk space on the web root filesystem
+$ df -h /var/www /var/www/html || df -h
+
+# 3) Check httpd/nginx status (which web server is present)
+$ systemctl is-active --quiet httpd && echo "httpd active" || echo "httpd not active"
+$ systemctl is-active --quiet nginx && echo "nginx active" || echo "nginx not active"
+
+# 4) Show ownership & perms for repos path (if exists)
+$ ls -ld /var/www/html /var/www/html/repos /var/www/html/repos/mirror || true
+$ ls -l /var/www/html/repos || true
+
+# 5) SELinux status (if SELinux installed)
+$ getenforce || echo "getenforce not available"
+$ sestatus || echo "sestatus not available"
+
+# 6) Check if semanage is installed (used to set persistent SELinux file contexts)
+$ which semanage || echo "semanage not installed"
+>
+
+# For this section, I'll be using Apache + HTTPS (self-signed CA):
+
+- Verify the following packages are installed:
+$ sudo dnf info mod_ssl openssl httpd
+$ sudo dnf install mod_ssl openssl httpd
+
+
+> At this point, verify you want to use the name you have in mind for your repo.  I decided to update
+all of my hosts' files, after I created the certs, sent them out, and moved 'em around.  Don't pull a me.
+....jic you wanna be a'like me:
+-  Modify on each system:
+$ sudo nano /etc/hosts
+ <ip>	<name>	<2nd_name>	<3rd_name>
+Save & Exit
+
+$ ping <host|server>
+$ ssh <host|server>
+
+
+# Back on the repo server
+
+- Create an OpenSSL config /etc/pki/tls/localcerts/knight.cnf:
+$ sudo /etc/pki/tls/localcerts/<repo-name>.cnf
+[req]
+default_bits       = 4096
+prompt             = no
+default_md         = sha256
+req_extensions     = req_ext
+distinguished_name = dn
+
+[dn]
+C = US
+ST = YourState
+L = YourCity
+O = YourOrg
+OU = IT
+CN = knight
+
+[req_ext]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = knight
+IP.1  = 192.168.1.50
+Save & Exit
+
+- Generate a self-signed certificate:
+$ sudo mkdir -p /etc/pki/tls/localcerts
+$ sudo openssl req -x509 -nodes -days 1095 -newkey rsa:4096 \
+  -keyout /etc/pki/tls/localcerts/<repo-name>.key \
+  -out /etc/pki/tls/localcerts/<repo-name>.crt \
+  -subj "/C=US/ST=YourState/L=YourCity/O=YourOrg/OU=IT/CN=repo-server.local"
+
+- Point Apache to the certificate:
+$ sudo nano /etc/httpd/conf.d/ssl.conf
+#SSLCertificateFile /etc/pki/tls/localcerts/<repo-name>.crt
+#SSLCertificateKeyFile /etc/pki/tls/localcerts/<repo-name>.key
+
+- Restart httpd service:
+$ sudo systemctl daemon-reload
+$ sudo systemctl start --enable httpd
+
+- Make adjustments to your SELinux and firewall:
+$ sudo firewall-cmd --add-service=https --permanent
+$ sudo firewall-cmd --reload
+
+- SELinux needs to be able to read your certs, make sure to modify:
+$ sudo chcon --type=httpd_config_t /etc/pki/tls/localcerts/<repo-name>.key
+$ sudo chcon --type=httpd_config_t /etc/pki/tls/localcerts/<repo-name>.crt
+
+- Restart Apache:
+$ sudo systemctl restart httpd
+
+- Test HTTPS locally:
+$ curl -Ik https://<repo-name>/
+
+- You should see one of the following:
+a) HTTP/1.1 200 OK		
+b) HTTP/1.1 403 Forbidden	# may be errors with your /etc/yum.repos.d/<repo>.repo file
+
+- Deploy trust on repo server:
+$ sudo cp /etc/pki/tls/localcerts/<repo-name>.crt /etc/pki/ca-trust/sources/anchors/
+$ sudo update-ca-trust extract
+ 
+> Recreate a repo file on the client:
+- SSH to the client:
+$ ssh <user>@server
+$ sudo nano /etc/yum.repos.d/<repo-name>.repo
+
+[<repo-name>-baseos]
+name=<repo-name> BaseOS Repo
+baseurl=https://<repo-name>/repos/mirror/baseos/
+enabled=1
+gpgcheck=0
+
+[<repo-name>-appstream]
+name=<repo-name> AppStream Repo
+baseurl=https://<repo-name>/repos/mirror/appstream/
+enabled=1
+gpgcheck=0
+
+[<repo-name>-epel]
+name=<repo-name> EPEL-Release Repo
+baseurl=https://<repo-name>/repos/local/
+enabled=1
+gpgcheck=0
+priority=1
+Save & Exit
+
+- Disable unneeded repos:
+$ sudo dnf config-manager --set-disabled <repo>.repo
+> ...or manually edit /etc/yum.repos.d/<repo>.repo:
+# comment out:
+enabled=1	# or change "1" to "0"
+> ...or remove completely if no longer needed:
+$ sudo rm -rf /etc/yum.repos.d/<repo>.repo
+
+- Verify enabled repo:
+$ sudo dnf repolist enabled
+
+- Test connectivity:
+$ sudo dnf clean all
+$ sudo dnf makecache
+
+> This forces DNF to refresh metadata from the repo server.
+> Expected: you should see downloads from https://<repo-name>/... without errors.
+> If you get "curl error 60", there’s a cert issue.
+
+
+What gpgcheck=0 does
+- It disables GPG signature verification for packages.
+- That means DNF/YUM will happily install RPMs without checking whether they’re signed and trusted.
+- In other words: “If it’s in the repo, I’ll install it, no questions asked.”
+
+Why this matters
+- Security risk: Without GPG checks, there’s no cryptographic guarantee that the RPMs are genuine and unmodified.
+- Integrity: With gpgcheck=1, DNF will verify that the package matches a trusted GPG key before installing it. If someone tampered with your repo or injected an RPM, clients would reject it.
+
+
+> When you’re ready, you’ll want to:
+
+- Generate a GPG key for your repo server:
+$ gpg --full-generate-key
+
+- Export the public key to share with clients:
+$ gpg --armor --export "Repo Signing Key" > /etc/pki/rpm-gpg/RPM-GPG-KEY-<repo-name>
+...or
+$ gpg --armor --export "<repo-name> Repo Signing Key" | sudo tee /etc/pki/rpm-gpg/RPM-GPG-KEY-<repo-name>
+
+
+**Note:** -  If adding custom RPM's you'll need to self-sign your keys
+- Sign RPMs in your local repo with that key.
+$ sudo dnf install rpm-sign
+$ sudo gpg --list-keys
+> The uid line is the name you'll use when perfroming --addsign
+
+- Edit the gpg macros file:
+$ sudo nano ~/.rpmmacros
+> Add the following lines:
+%_signature gpg
+%_gpg_name Knight Repo Signing Key
+Save & Exit
+
+- Sign the key:
+$ rpm --addsign /var/www/html/repos/local/*.rpm
+
+- Check the signature:
+$ rpm --addsign /var/www/html/repos/local/*.rpm
+> Continue to the next step if self-signed keys are unneeded
+
+- Update repo metadata on the server so signatures are included:
+$ createrepo_c --update /var/www/html/repos/mirror/baseos/
+$ createrepo_c --update /var/www/html/repos/mirror/appstream/
+
+- Verify client access:
+$ openssl s_client -connect <repo-name>:443 -servername <repo-name>
+> Look for your canonical name(CN) or subjectAltName (SAN)
+
+- From the server, deploy the self-signed cert to each client:
+$ sudo scp /etc/pki/tls/localcerts/<repo-name>.crt <user>@<client>:/tmp/
+> Distribute the GPG public key to clients and enable gpgcheck=1 in the .repo files.
+- On clients modify /etc/yum.repos.d/<repo-name>.repo file:
+
+gpgcheck=1
+gpgkey=https://<repo>/RPM-GPG-KEY-<repo>
+Save & Exit
+
+- On the client:
+$ ssh <user>@client
+$ sudo mv /tmp/*.crt /etc/pki/ca-trust/source/anchors/
+$ sudo update-ca-trust extract
+$ sudo rm -rf /var/cache/dnf
+$ sudo dnf clean all
+
+> You may need to locate any available repos in /etc/yum.repos.d/ and disable manually.
+- Enable repo:
+$ sudo dnf makecache --enablerepo=<repo>
+
+- Verify connectivity from the client (should see "200 OK"):
+$ curl -Ik https://<repo>/repos/mirror/
+$ sudo dnf list available --repo=<repo> | head
+
+
+(Periodically Update) Maintenance tasks
+
+- Periodically update your mirror:
+$ rsync -avz --delete <upstream-mirror> /var/www/html/repos/mirror/
+$ createrepo_c --update /var/www/html/repos/mirror/baseos/
+$ createrepo_c --update /var/www/html/repos/mirror/appstream/
+
+**Note:** - Refresh client caches as needed.
+
+> Why you need to update
+- Security patches: BaseOS and AppStream RPMs are updated regularly.
+- Bug fixes / enhancements: Updated packages improve stability and performance.
+- Consistency: Keeping your mirror in sync prevents clients from seeing outdated metadata.
+
+> The frequency depends on your environment:
+
+Environment Type		Recommended Frequency
+Enterprise / production	Daily or every 2–3 days (automated via cron)
+Small lab / test environment	Weekly or when needed
+Critical security environments	Daily, sometimes multiple times per day if updates are frequent
+
+> Conditions that trigger an update:
+- Upstream updates are available → Red Hat publishes errata and new packages.
+- New client joins → Ensure it gets the latest metadata.
+- Adding custom/internal RPMs → Always regenerate metadata after adding/removing packages.
+- After fixing mirror issues → e.g., missing repodata, broken files, partial sync.
+

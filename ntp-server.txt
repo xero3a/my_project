@@ -1,0 +1,163 @@
+- Configure hostname:
+$ sudo hostnamectl set-hostname <name>
+
+- Modify /etc/hosts configuration file:
+$ sudo nano /etc/hosts
+> Add additional servers/hosts for the domain
+<ip>	<hostname>  <FQDN [if needed]>
+
+- Identify network interface to be used for network connectivity:
+$ sudo nmcli connection show
+
+- Modify connection settings:
+$ sudo nmcli connection modify enp1s0 ipv4.address 192.168.0.10/24
+$ sudo nmcli connection modify enp1s0 ipv4.gateway 192.168.0.1
+$ sudo nmcli connection modify enp1s0 ipv4.dns 192.168.0.5
+$ sudo nmcli connection modify enp1s0 ipv4.method manual
+$ sudo nmcli connection down enp1s0
+$ sudo nmcli connection up enp1s0
+
+- Verify connectivity with any active server/hosts:
+$ ping <host-ip>
+
+
+- Create your local repo if needed:
+> assuming you've downloaded or transfered the dvd.iso file to an ideal location
+$ sudo mkdir -p /mnt/iso
+$ sudo mount -o loop /path/to/dvd.iso /mnt/iso
+
+- Verify files are available
+$ sudo ls -l /mnt/iso/
+> You'll need to verify what directory holds the packages needed for your 
+repo to function.  Typically "BaseOS" and "AppStream" are used in the local 
+repo file.
+
+- Create a local repo file:
+$ sudo nano /etc/yum.repos.d/local-dvd.repo
+
+[local]
+name=create a name for this repo
+baseurl=file:///mnt/iso/path/to/package
+enabled=1
+gpgcheck=0	# for testing a lab purposes, 0(no) is being used
+**Note:** - Each [name] block is needed for each package directory (e.g., [BaseOS], [AppStream]..etc)
+
+> [local] can be used for "mirroring" online repo sites when the network is in a closed environment.
+- Example:
+- Mirror-style (served via HTTP in closed network):
+# /etc/yum.repos.d/internal-baseos.repo
+[internal-baseos]
+name=Internal BaseOS Mirror
+baseurl=http://<repo-server-ip>/repo/BaseOS
+enabled=1
+gpgcheck=0
+
+# /etc/yum.repos.d/internal-appstream.repo
+[internal-appstream]
+name=Internal AppStream Mirror
+baseurl=http://<repo-server-ip>/repo/AppStream
+enabled=1
+gpgcheck=0
+
+**Note:** - You'll need to verify http(80)/https(443) are open in the firewall rules
+>
+
+- Configure repo settings:
+$ sudo dnf clean all
+$ sudo makecache
+
+- Verify repo is functional:
+$ sudo dnf repolist
+$ sudo dnf update
+
+> At this point, you'll need several packages for your ntp server:
+- firewalld
+- chrony
+- policycoreutils
+$ sudo dnf install <ntp-packages>
+
+- Configure chrony:
+$ sudo nano /etc/chrony.conf
+> Add or uncomment the following lines:
+server <ntp-time-source-ip> iburst
+driftfile /var/lib/chrony/drift
+makestep 1.0 3		# may need to tweak based on your environment
+> allow the subnets that will contact the ntp server
+allow 192.168.1.0/24
+allow 192.168.2.0/24
+allow 192.168.3.0/24
+local stratum 10
+logdir /var/log/chrony
+Save & Exit
+
+- Enable chronyd and verify status:
+$ sudo systemctl enable --now chronyd
+$ sudo systemctl status chronyd
+
+> Use only one, depending on needs<
+- [option 1]Allow port 123/UDP for ntp:
+$ sudo firewall-cmd --permanent --add-service=ntp (or.. =123/udp) 	# If you want all zones to have access[less fine-grained control]
+$ sudo firewall-cmd --reload
+$ sudo firewall-cmd --list-all
+$ sudo firewall-cmd --list-ports		# lists active ports
+$ sudo firewall-cmd --list-services	# lists active services
+
+> In some hardened environments, SELinux may block chronyd from binding 
+to port 123 unless it’s properly labeled.
+- Usually not an issue with defaults, but if needed:
+$ sudo semanage port -a -t ntp_port_t -p udp 123
+
+- [option 2]Create access controls for various subnets/hosts:		# If you want specific zones to have access[more fine-grained control]
+$ sudo firewall-cmd --add-service=ntp --zone=public --ipv4
+$ sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<ntp-ip>/<mask>" service name="ntp" accept'
+$ sudo firewall-cmd --reload
+$ sudo firewall-cmd --list-all
+$ sudo ss -tulpn | grep 123		# shows services using port 123
+
+- Verify the ntp source:
+$ sudo chronyc sources -v
+$ sudo chronyc tracking	# should have a Reference ID of something other than 0's to tell you the ntp server is being used as the time source
+
+- Force a sync if needed:
+$ sudo chronyc makestep
+
+- To check for connected clients:
+$ sudo chronyc clients
+
+- If needed, configure your timezone:
+$ sudo timedatectl
+
+
+
+# On other servers/clients...
+
+- To see if there are any sources available:
+$ sudo chronyc sources -v
+
+- To configure your host to communicate with the time server:
+$ sudo nano /etc/chrony.conf
+
+- Add a line server <NTP_IP> iburst (for local-time services)
+server 192.168.0.10 iburst
+
+# If present, verify these lines are uncommented:
+# Record the rate that the system clock gains/loses time
+driftfile /var/lib/chrony/drift
+
+# Specify directory for log files
+logdir /var/log/chrony
+
+save & quit
+
+- Reload chronyd:
+$ sudo systemctl restart chronyd
+
+- Verify chronyd is active and running:
+$ sudo systemctl status chronyd
+
+- Recheck your time sources
+$ sudo chronyc sources -v
+
+- Ensure Boot-Time Sync
+$ systemctl is-enabled chronyd
+

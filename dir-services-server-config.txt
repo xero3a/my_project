@@ -1,0 +1,165 @@
+FREEIPA SERVER INSTALLATION AND CONFIGURATION GUIDE
+
+This guide covers installing and configuring a FreeIPA server on RHEL/CentOS/Fedora,
+including optional integrated DNS, Kerberos setup, firewall configuration, certificate
+backup, and client join instructions.
+
+-------------------------------------------------------------------------------
+
+1. VERIFY REQUIRED PACKAGES
+
+Check if the required packages are installed:
+
+$ sudo dnf info samba
+$ sudo dnf info ipa-server
+
+Install any missing packages:
+
+$ sudo dnf install ipa-server
+
+-------------------------------------------------------------------------------
+
+2. INSTALL FREEIPA SERVER
+
+$ sudo ipa-server-install
+
+Prompts During Installation:
+
+1. Integrated DNS (BIND)
+   - Yes: FreeIPA will act as both directory server and DNS server. Useful if no
+     other DNS exists. May conflict with an existing DNS server in the lab.
+   - No: FreeIPA manages identity only. Continue using your existing DNS server.
+     Recommended for labs with an authoritative DNS VM.
+
+2. Fully Qualified Domain Name (FQDN)
+   Example: master.example.com
+   Server host name [your-server]: <FQDN.local.lab>
+
+   Verify with:
+   hostnamectl
+
+3. Domain Name
+   Please confirm the domain name [local.lab]: local.lab
+
+4. Realm Name
+   Please provide a realm name [LOCAL.LAB]: LOCAL.LAB
+
+5. Directory Manager Password
+   Enter and confirm the password for the Directory Manager account.
+
+6. IPA Administrative User
+   A regular system account for IPA administration.
+   IPA <user> password:
+
+7. NetBIOS Domain Name
+   NetBIOS domain name [LAB]: LAB
+
+8. Chrony/NTP Configuration
+   Do you want to configure chrony with NTP server or pool address? [no/yes]
+   Enter NTP source server addresses separated by comma, or press Enter to skip:
+   Enter a NTP source pool address, or press Enter to skip:
+
+9. Confirmation
+   The IPA Master Server will be configured with the above values. Continue? [no/yes]
+
+-------------------------------------------------------------------------------
+
+3. VERIFY INSTALLATION
+
+Kerberos authentication:
+
+$ kinit admin
+$ klist   # Should show a valid ticket
+
+LDAP and FreeIPA verification:
+
+$ ipa user-find
+$ ipa group-find
+
+-------------------------------------------------------------------------------
+
+4. FIREWALL CONFIGURATION
+
+Open Required Ports:
+
+# HTTP/HTTPS
+$ sudo firewall-cmd --permanent --add-port=80/tcp
+$ sudo firewall-cmd --permanent --add-port=443/tcp
+
+# LDAP/LDAPS
+$ sudo firewall-cmd --permanent --add-port=389/tcp
+$ sudo firewall-cmd --permanent --add-port=636/tcp
+
+# Kerberos
+$ sudo firewall-cmd --permanent --add-port=88/tcp
+$ sudo firewall-cmd --permanent --add-port=464/tcp
+$ sudo firewall-cmd --permanent --add-port=88/udp
+$ sudo firewall-cmd --permanent --add-port=464/udp
+
+# DNS
+$ sudo firewall-cmd --permanent --add-port=53/tcp
+$ sudo firewall-cmd --permanent --add-port=53/udp
+
+# NTP
+$ sudo firewall-cmd --permanent --add-port=123/udp
+
+# Reload firewall
+$ sudo firewall-cmd --reload
+
+# Verify open ports
+$ sudo firewall-cmd --list-ports
+$ sudo firewall-cmd --list-all
+
+Tip: Alternatively, use service-based rules:
+
+$ sudo firewall-cmd --permanent --add-service=freeipa-ldap
+$ sudo firewall-cmd --permanent --add-service=freeipa-ldaps
+$ sudo firewall-cmd --reload
+
+-------------------------------------------------------------------------------
+
+5. CERTIFICATE BACKUP
+
+FreeIPA stores the CA certificate in /root/cacert.p12. Backup this file:
+
+$ ls /root/cacert.p12
+$ sudo cp /root/cacert.p12 /path/to/backups/
+$ sudo chown <your-user>:<your-user> /path/to/backups/cacert.p12
+$ sudo chmod 600 /path/to/backups/cacert.p12
+
+Important:
+- Keep at least one copy off the server/VM.
+- Required for creating replicas, migrating the CA, or restoring a broken directory server.
+
+-------------------------------------------------------------------------------
+
+6. JOINING LAB CLIENT VMS
+
+Configure DNS on Client:
+Edit /etc/resolv.conf (or use NetworkManager for persistence):
+
+nameserver <ip-of-services-server>
+search local.lab
+
+Install IPA Client:
+
+$ sudo dnf install ipa-client
+$ sudo ipa-client-install --mkhomedir
+
+-------------------------------------------------------------------------------
+
+7. OPTIONAL STEPS
+
+- Configure Replicas: For redundancy, ensure proper DNS resolution and certificate availability.
+- Integrate Services: Samba, Kerberos-aware apps, or other network services.
+- Verify DNS (if using integrated DNS):
+
+$ ipa dnszone-find
+
+-------------------------------------------------------------------------------
+
+8. NEXT STEPS
+
+- Use kinit <user> to obtain a Kerberos ticket and test authentication.
+- Explore the FreeIPA web interface (https://<server-FQDN>) for user/group management.
+- Plan for regular backups of certificates and directory data.

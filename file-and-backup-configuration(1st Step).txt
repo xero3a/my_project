@@ -1,0 +1,302 @@
+- Configure domain hostname
+$ sudo hostnamectl set-hostname file-and-backup-vm.lab.mydomain
+
+- Configure /etc/hosts file to reflect network clients:
+$ sudo nano /etc/hosts
+
+- Configure host IP:
+$ ip addr	# let's you identify network interface to be used
+$ sudo nmcli connection modify enp1s0 ipv4.address <designated-IP/mask>
+$ sudo nmcli connection modify enp1s0 ipv4.gateway <designated-IP>
+$ sudo nmcli connection modify enp1s0 ipv4.dns <designated-IP>
+$ sudo nmcli connection modify enp1s0 ipv4.method <manual|auto>
+$ sudo nmcli connection down <interface>
+$ sudo nmcli connection up <interface>
+$ ip addr	# verify modifications/changes
+$ ping <target>
+
+- Transfer your client certificates for clean ssh connectivity:
+$ ssh <user>@<IP>
+(close the connection - <ctrl+d>
+$ ssh <user>@<hostname>
+
+- Verify /etc/resolv.conf points to your Authoritative DNS server:
+$ sudo nano /etc/resolv.conf
+
+- Transfer .iso files, repo packages needed from removeable media or another client:
+(On the client)
+$ sudo scp /path/to/files <user>@<target>:/path/to/store/file
+
+- Mount your .iso to a location that will be read-only:
+$ sudo mkdir -p /mnt/<name> (or) /tmp/<name>
+$ sudo mount -o loop /path/to/iso /mnt/<name>
+
+- Create your repo file:
+$ sudo nano /yum.repos.d/repo-file.repo
+> Example:
+~ [BaseOS]
+~ name=BaseOS
+~ baseurl=/mnt/iso/BaseOS  	# ls -l /mnt/iso/ should list available directories and files.  The one named in the repo file will be the path you need to point to.
+~ enabled=1
+~ gpgcheck=0		# for lab purposes, gpgcheck will not be enabled.  Based on STIG requirements, gpgcheck may need to be set to "1"
+> Save & Quit
+
+$ sudo dnf clean all
+$ sudo dnf makecache
+$ sudo dnf update
+
+- Verify the following packages are installed:
+$ sudo dnf info vim 
+$ sudo dnf info tar
+$ sudo dnf info rsync
+$ sudo dnf info nfs-utils
+$ sudo dnf info samba
+
+> For my set up I needed:
+$ sudo dnf info samba-client
+$ sudo dnf info zstd
+$ sudo dnf info borgbackup
+$ sudo dnf info restic
+$ sudo dnf info epel-release
+
+**Note:** - BorgBackup and Restic are available through the Epel-Release package.  Needed dependencies are also located there.  
+If the epel-release package isn't available on your system...
+
+- If connected to the internet, download:
+$ curl -O https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+$ sudo dnf download epel-release # downloads to the current directory
+
+- If transferring from another system:
+$ sudo scp /<dir>/epel-release <user>@<domainname-or-IP>:/<dir>
+
+- Move rpms/packages to a desired location:
+$ sudo mv /path/to/rpm_packages/* /desired/location
+
+- Create repository metadata:
+$ sudo dnf install -y createrepo	# create requires a package install
+$ sudo createrepo /desired/location
+
+
+- Modify the installed /etc/yum.repos.d/epel-repo file
+$ sudo nano epel-repo
+~ name=xxx
+~ baseurl=file:///epel.rpm/location
+~ gpgcheck=0	# for lab purposes, gpgcheck will not be enabled.  Based on STIG requirements, gpgcheck may need to be set to "1"
+~ enabled=1
+Save & Quit
+
+- Install:
+$ sudo dnf clean all
+$ sudo dnf makecache
+$ sudo dnf install epel-release
+
+> The issue I ran into involved creating repo metadata.  The requirement to download more 
+packages (createrepo) was defeating the purpose of whatmy lab was intended to do.  The solution 
+was to download the required restic and borgbackup packages; along with their dependencies.
+So heres what needed to be done:
+
+1. I kept my original repo file intact.
+
+2. Download the needed rpms on a system with internet connectivity:
+$ sudo dnf download --resolve restic	# downloads to the current directory
+$ sudo dnf download --resolve borgbackup	# downloads to the current directory
+- This will pull needed rpms:
+a. python3-llfuse
+b. python3-msgpack
+c. python3-packaging
+d. python3-pyparsing
+e. xxhash-libs
+
+3. Move rpms to target system:
+$ sudo scp *.rpms <user>@<target-IP>:/desired/directory/
+
+4. On the target system, install with RedHat Package Manager:
+$ sudo rpm -Uvh <dependencies-first>.rpm
+$ sudo rpm -Uvh borg...
+$ sudo rpm -Uvh restic
+
+- Now you can proceed as intended.
+>
+
+- Sync with your NTP source:
+$ sudo nano /etc/chrony.conf
+~ server <IP-orSource_Name> iburst
+Save & Exit
+$ sudo systemctl restart chronyd
+$ sudo chronyc makestep
+
+- Verify NTP source
+$ sudo chronyc sources -v
+> If your timezones are not synced:
+$ sudo timedatectl set-timezone UTC
+$ sudo timedatectl list-timezones
+$ sudo timedatectl set-timezone <your-timezone-location> (can be found in /usr/share/zoneinfo )
+
+
+- Create a group for automation and accidental overwrites:
+$ sudo groupadd backups
+$ sudo useradd -m -r -g backups -s /usr/sbin/nologin backup
+
+$ sudo chown -R backup:backups /srv/backups		# for VM + system backups (incremental/full)
+$ sudo chmod -R 750 /srv/backups	# write access only for backup user; r_x for group
+
+- Create your dedicated directories for server records:
+$ sudo mkdir -p /srv/nfs	# for nfs shares
+$ sudo mkdir -p /srv/samba	# for smb/windows shares
+$ sudo chmod 755 /srv/*
+$ sudo chown root:root /srv/nfs
+$ sudo chown root:root /srv/samba
+
+$ sudo mkdir -p /srv/archive	# for long-term archive, snapshot
+$ sudo chown -R root:root /srv/archive
+$ sudo chmod 750 /srv/archive
+
+$ sudo mkdir -p /srv/storage	# for future raid group(s)
+$ sudo chown root:backups /srv/storage
+$ sudo chmod  750 /srv/storage
+
+$ sudo mkdir -p /srv/configs	# configuration only snapshots
+$ sudo mkdir -p /srv/logs	# backup logs, reports, or errors
+$ sudo chmod 700 /srv/configs
+$ sudo chmod 700 /srv/logs
+$ sudo chown backup:backups /srv/configs	# allows root to manage this information
+$ sudo chown <user>:<user> /srv/logs	# allows a designated user to manage log files
+
+- If you had a dedicated RAID volume /dev/md0 for storage, your /etc/fstab might look like:
+$ sudo nano /etc/fstab
+~ /dev/md0    /srv    ext4    defaults,noatime    0 2
+
+
+- Create your subdirectories for /backups:
+$ sudo mkdir -p /srv/backups/<name>
+**Note:** - You can add subdirectories later based on services;
+Subdirectories will be created for Borg and Restic based on service:
+
+> At this point, you'll need to map out your directory structure by server, clients, or groups:
+- For testing existing services:
+$ sudo mkdir -p /srv/backups/borg/dns/
+$ sudo mkdir -p /srv/backups/borg/ntp/
+$ sudo mkdir -p /srv/backups/borg/dir-services/
+$ sudo chown -R root:backups /srv/backups/borg
+$ sudo chmod -R 750 /srv/backups/borg
+$ sudo chown -R root:backups /srv/backups/borg/*
+$ sudo chmod -R 770 /srv/backups/borg/* 
+
+$ sudo mkdir -p /srv/backups/restic/dns/
+$ sudo mkdir -p /srv/backups/restic/ntp/
+$ sudo mkdir -p /srv/backups/restic/dir-services/
+$ sudo chown -R root:backups /srv/backups/restic
+$ sudo chmod -R 750 /srv/backups/restic
+$ sudo chown -R root:backups /srv/backups/restic/*
+$ sudo chmod -R 750 /srv/backups/restic/*
+
+- (optional) Create a backup group
+> If you plan to run automated jobs under a dedicated backup user:
+
+$ sudo groupadd backups
+$ sudo useradd -m -r -g backups -s /usr/sbin/nologin backup
+$ sudo chown <user>:backups /srv/backups
+
+> Then, grant only the backup user write access. This prevents accidental overwrites from other users.
+
+- Verify your directory structure is in order:
+$ sudo tree /srv/backups
+
+> For jobs (cron/systemd) needs to be used for every service directory
+- Initialize repositories (one for every service):
+$ sudo -u backup borg init --encryption=repokey /srv/backups/borg/<service>
+$ sudo -u backup restic init --repo /srv/backups/restic/<service>
+
+- Run a test-backup:
+$ sudo -u backup borg create --dry-run /srv/backups/borg/<service>::test-archive /etc/named
+$ sudo -u backup restic backup --dry-run /etc/named --repo /srv/backups/restic/<service>
+
+- Perform an actual backup:
+$ sudo -u backup borg create /srv/backups/borg/<service>::first-backup /etc/named
+$ sudo -u backup restic backup /etc/named --repo /srv/backups/restic/<service>
+
+- Create a timer + service for Borg:
+$ sudo nano /etc/systemd/system/borg-<service>.service
+
+[Unit]
+Description=Borg Backup for <service> service
+
+[Service]
+Type=oneshot
+User=backup
+ExecStart=/usr/bin/borg create /srv/backups/borg/<service>::$(date +%%Y-%%m-%%d) /etc/named
+StandardOutput=append:/srv/logs/<service>-borg.log
+StandardError=append:/srv/logs/<service>-borg.log
+
+$ sudo nano /etc/systemd/system/borg-<service>.timer
+
+[Unit]
+Description=Run Borg <service> backup daily
+
+[Timer]
+OnCalendar=02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
+
+Enable and start the timer:
+
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable --now borg-dns.timer
+
+> Restic timers are configured the same way.
+
+
+Each service or VM should have:
+
+- Its own repository (Borg or Restic)
+- Dedicated logs in /srv/backups/logs/<service>.log
+- Consistent ownership: backup:backups, permissions 750
+
+> When adding new VMs:
+
+$ sudo mkdir -p /srv/backups/borg/<new-vm>
+$ sudo mkdir -p /srv/backups/restic/<new-vm>
+$ sudo chown -R backup:backups /srv/backups/<new-vm>
+$ sudo chmod -R 750 /srv/backups/<new-vm>
+
+Borg
+
+- List archives:
+$ sudo -u backup borg list /srv/backups/borg/dns
+
+- Test extract to a temporary location:
+$ sudo -u backup borg extract --dry-run /srv/backups/borg/dns::first-backup
+
+- Restore specific files:
+$ sudo -u backup borg extract /srv/backups/borg/dns::first-backup etc/named.conf
+
+Restic
+
+- List snapshots:
+$ sudo -u backup restic snapshots --repo /srv/backups/restic/dns
+
+- Test restore to temp directory:
+$ sudo -u backup restic restore latest --target /tmp/restic-test --repo /srv/backups/restic/dns
+
+- Validate files exist and are intact:
+$ sudo ls -l /tmp/restic-test/etc/named
+
+
+
+The logical next steps are:
+
+- Mapping new services/VMs
+- When a new service or VM is deployed, create its Borg and Restic directories under /srv/backups.
+- Initialize the repositories.
+- Add a systemd service and timer for scheduled backups.
+- Optionally, create a dedicated log file for that service.
+- Verify backup health periodically
+- Run borg list and restic snapshots to confirm backups exist.
+- Use borg check and restic check to verify repository integrity.
+- Test restores
+- Perform a restore to a temporary location to ensure data integrity and confirm restore procedures.
+- Document new additions
+- Update your mapping table (mapping.txt) with the new service name, type (Borg or Restic), backup path, and log file.

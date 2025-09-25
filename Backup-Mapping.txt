@@ -1,0 +1,27 @@
+VM NAME             | ROLE/SERVICE               | BORG PATH                          | RESTIC PATH                           | FREQ | RETENTION | PRIORITY | NOTES
+--------------------+----------------------------+------------------------------------+---------------------------------------+------+-----------+----------+----------------------------------------
+Print-Scanner       | Print/Scanner services     | /srv/backups/borg/print-scanner    | /srv/backups/restic/print-scanner     | W    | M         | Low      | Configs only, spool dirs excluded
+Root-CA             | Root Certificate Authority | /srv/backups/borg/root-ca          | /srv/backups/restic/root-ca           | D    | L         | High     | Secure storage, encrypted at rest
+Intermediate-CA     | Intermediate CA            | /srv/backups/borg/intermediate-ca  | /srv/backups/restic/intermediate-ca   | D    | L         | High     | Same as Root CA
+Responder-Auth      | OCSP/Responder Authority   | /srv/backups/borg/responder-auth   | /srv/backups/restic/responder-auth    | D    | M         | High     | Supports PKI trust chain
+Authentication      | LDAP/Kerberos IdM          | /srv/backups/borg/authentication   | /srv/backups/restic/authentication    | D    | L         | High     | Contains user/identity DB
+Database            | SQL/NoSQL DB server        | /srv/backups/borg/database         | /srv/backups/restic/database          | D    | L         | High     | Use dump/export before backup
+Web                 | Web server (apps/sites)    | /srv/backups/borg/web              | /srv/backups/restic/web               | D    | M         | Med      | Static files + configs
+Email               | Mail server                | /srv/backups/borg/email            | /srv/backups/restic/email             | D    | L         | High     | Maildirs + configs
+License             | License mgmt server        | /srv/backups/borg/license          | /srv/backups/restic/license           | D    | M         | High     | Protect app availability
+n8n-Automation      | Workflow automation        | /srv/backups/borg/n8n-automation   | /srv/backups/restic/n8n-automation    | D    | M         | Med      | Separate test/prod repos later
+Camera              | IP camera mgmt             | /srv/backups/borg/camera           | /srv/backups/restic/camera            | W    | M         | Low      | Only configs; raw video excluded
+Video               | Video streaming            | /srv/backups/borg/video            | /srv/backups/restic/video             | W    | M         | Low      | Same as above
+Game                | Game server                | /srv/backups/borg/game             | /srv/backups/restic/game              | W    | M         | Low      | Restore optional
+Music               | Music/media server         | /srv/backups/borg/music            | /srv/backups/restic/music             | W    | M         | Low      | Same as above
+Config-Mgmt         | Ansible/Puppet mgmt        | /srv/backups/borg/config-mgmt      | /srv/backups/restic/config-mgmt       | D    | L         | High     | Store playbooks + secrets
+COMN                | Central Ops Mgmt Node      | /srv/backups/borg/comn             | /srv/backups/restic/comn              | D    | L         | High     | Master orchestration
+CI-CD               | Build pipeline server      | /srv/backups/borg/ci-cd            | /srv/backups/restic/ci-cd             | D    | M         | Med      | Artifacts excluded, configs only
+Monitoring          | Zabbix/Prometheus          | /srv/backups/borg/monitoring       | /srv/backups/restic/monitoring        | D    | M         | Med      | DB dumps + configs
+Logging             | ELK/Graylog aggregation    | /srv/backups/borg/logging          | /srv/backups/restic/logging           | D    | S         | Med      | Retain config, not full log indices
+Load-Balancer       | HAProxy/Nginx LB           | /srv/backups/borg/load-balancer    | /srv/backups/restic/load-balancer     | D    | M         | High     | Config only
+Dev-Test            | Development/Test VM        | /srv/backups/borg/dev-test         | /srv/backups/restic/dev-test          | W    | S         | Low      | Lower priority
+Firewall-VPN        | Firewall & VPN             | /srv/backups/borg/firewall-vpn     | /srv/backups/restic/firewall-vpn      | D    | L         | High     | Configs critical for connectivity
+Proxy               | Proxy server               | /srv/backups/borg/proxy            | /srv/backups/restic/proxy             | D    | M         | Med      | Config only
+SIEM                | Security Info/Event Mgmt   | /srv/backups/borg/siem             | /srv/backups/restic/siem              | D    | L         | High     | Large DB, use export tools
+DHCP                | DHCP server                | /srv/backups/borg/dhcp             | /srv/backups/restic/dhcp              | D    | M         | High     | Leases + configs

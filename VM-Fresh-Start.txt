@@ -1,0 +1,22 @@
+- Create your vm with virt-install
+$ sudo virt-install \
+>--name server-vm \
+>--vcpus 4 \
+>--memory 16384 \
+>--disk path=/var/lib/libvirt/images/server-vm.qcow2,size=1000,bus=virtio \
+>--os-variant=rhel9.0 \
+>--network bridge=br0,model=virtio \
+>--cdrom /var/lib/libvirt/boot/rhel-9.0-x86_64-dvd.iso \
+>--graphics vnc \
+>--boot hd,cdrom
+
+
+- Shutdown vm if it's already been created and active:
+$ sudo virsh shutdown <vm>
+
+- Undefine old VM:
+$ sudo virsh undefine old-vm-name
+
+- Define new VM:
+$ sudo virsh define /tmp/old-vm.xml
+

@@ -1,0 +1,64 @@
+FREEIPA CLIENT JOIN GUIDE
+
+This guide covers joining a RHEL/CentOS/Fedora client VM to a FreeIPA domain.
+
+-------------------------------------------------------------------------------
+
+1. CONFIGURE DNS ON CLIENT
+
+Edit /etc/resolv.conf (or use NetworkManager for persistent settings):
+
+nameserver <ip-of-services-server>
+search local.lab
+
+Verify DNS resolution:
+
+$ ping <ipa-server-FQDN>
+$ dig <ipa-server-FQDN>
+
+-------------------------------------------------------------------------------
+
+2. INSTALL IPA CLIENT
+
+$ sudo dnf install ipa-client
+
+-------------------------------------------------------------------------------
+
+3. JOIN THE FREEIPA DOMAIN
+
+Use the following command to join the domain and create home directories:
+
+$ sudo ipa-client-install --mkhomedir
+
+Follow the prompts:
+
+- Domain: local.lab
+- Server FQDN: <ipa-server-FQDN>
+- Kerberos realm: LOCAL.LAB
+- Confirm configuration and complete installation
+
+-------------------------------------------------------------------------------
+
+4. VERIFY CLIENT CONFIGURATION
+
+Obtain a Kerberos ticket:
+
+$ kinit <user>
+$ klist   # Should show a valid ticket
+
+Check IPA connectivity:
+
+$ ipa user-find
+$ ipa group-find
+
+-------------------------------------------------------------------------------
+
+5. OPTIONAL STEPS
+
+- Configure NTP/Chrony to sync with the IPA server for Kerberos.
+- Test single sign-on with services integrated with Kerberos.
+- Ensure firewall allows communication with FreeIPA ports if running a local firewall.
+
+-------------------------------------------------------------------------------
+
+END OF GUIDE

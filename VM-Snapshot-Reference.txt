@@ -1,0 +1,13 @@
+VM Snapshot Template
+
+# VM Snapshots with libvirt
+
+Snapshots let you save a VM’s exact state at a moment in time.  
+They’re great for quick rollbacks before risky changes or updates.
+
+---
+
+## Creating a Snapshot
+
+Use the following command to create a snapshot for a VM:
+$ sudo virsh snapshot-create-as <vm-name> <snapshot-name> "<description>"

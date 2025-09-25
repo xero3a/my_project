@@ -1,0 +1,70 @@
+VM Template Setup
+
+- Step 1: Prepare environment and files
+
+    Make sure your RHEL 9.4 ISO is fully downloaded and accessible.
+    Example location: /var/lib/libvirt/isos/rhel-9.4-x86_64-dvd.iso
+
+- Verify ISO is readable by qemu user and libvirt:
+$ sudo chown root:qemu /var/lib/libvirt/isos/rhel-9.4-x86_64-dvd.iso
+$ sudo chmod 640 /var/lib/libvirt/isos/rhel-9.4-x86_64-dvd.iso
+
+- Create disk image for your VM
+$ sudo qemu-img create -f qcow2 /var/lib/libvirt/images/nested-vm0.qcow2 20G
+
+- Run virt-install with CDROM option
+
+- Use this to install from the ISO file directly:
+$ sudo virt-install \
+  --name nested-vm0 \
+  --memory 2048 \
+  --vcpus 2 \
+  --disk path=/var/lib/libvirt/images/nested-vm0.qcow2,format=qcow2 \
+  --network bridge=br0,model=virtio \
+  --graphics vnc,listen=127.0.0.1 \
+  --console pty,target_type=serial \
+  --cdrom /var/lib/libvirt/isos/rhel-9.4-x86_64-dvd.iso
+
+- Connect to the VM console
+Use virt-viewer (install if missing):
+$ sudo dnf install virt-viewer
+$ virt-viewer nested-vm0
+
+> Or use VNC client to connect to 127.0.0.1:5900 (default VNC port for first VM)
+
+- Complete OS installation via console window
+
+> Follow the installer prompts to finish installing RHEL in your nested VM.
+
+- Manage the VM
+- To list all VMs:
+$ sudo virsh list --all
+
+- To start VM:
+$ sudo virsh start nested-vm0
+
+- To stop VM:
+$ sudo virsh shutdown nested-vm0
+
+- To connect to serial console:
+$ sudo virsh console nested-vm0
+
+- Rename VM (optional)
+- Shutdown VM:
+$ sudo virsh shutdown old-vm-name
+
+- Dump XML:
+$ sudo virsh dumpxml old-vm-name > /tmp/old-vm.xml
+
+- Edit /tmp/old-vm.xml, change <name>old-vm-name</name> to <name>new-vm-name</name>.
+- Undefine old VM:
+$ sudo virsh undefine old-vm-name
+
+- Define new VM:
+$ sudo virsh define /tmp/old-vm.xml
+
+- Start new VM:
+$ sudo virsh start new-vm-name
+
+- Open a console:
+$ sudo virt-viewer --connect qemu:///system --wait <vm-name>

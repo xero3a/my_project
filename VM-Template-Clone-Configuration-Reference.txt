@@ -1,0 +1,62 @@
+Base VM Template:
+
+# VM Templates with libvirt
+
+Creating VM templates allows you to have a base VM setup that you can clone repeatedly to quickly spin up new VMs without reinstalling the OS every time.
+
+---
+
+## Step 1: Prepare the Template VM
+
+1. Shut down the VM you want to use as a template:
+$ sudo virsh shutdown nested-vm0
+
+- Copy the VM disk image to create a template disk:
+$ sudo cp /var/lib/libvirt/images/nested-vm0.qcow2 /var/lib/libvirt/images/nested-vm-template.qcow2
+
+- Dump the VM’s XML configuration:
+$ sudo virsh dumpxml nested-vm0 > /tmp/nested-vm-template.xml
+
+Step 2: Edit the Template XML
+- Open /tmp/nested-vm-template.xml in your text editor.  Change the VM name:
+<name>nested-vm-template</name>
+
+- Remove or replace the UUID line:
+<!-- Either delete the whole <uuid>...</uuid> line or generate a new UUID -->
+
+- Update the disk image file path to point to the copied template disk:
+    <source file='/var/lib/libvirt/images/nested-vm-template.qcow2'/>
+    Save and close the file.
+
+Step 3: Define the Template VM
+$ sudo virsh define /tmp/nested-vm-template.xml
+    - This registers the template VM with libvirt.
+
+Step 4: Create New VMs from the Template
+
+- Whenever you want to create a new VM from the template, copy the 
+template disk image to a new disk image for the new VM:
+$ sudo cp /var/lib/libvirt/images/nested-vm-template.qcow2 /var/lib/libvirt/images/nested-vm1.qcow2
+
+- Dump the template XML again:
+$ sudo virsh dumpxml nested-vm-template > /tmp/nested-vm1.xml
+
+- Edit /tmp/nested-vm1.xml.  Change the <name> to the new VM name:
+<name>nested-vm1</name>
+
+- Update the disk path:
+<source file='/var/lib/libvirt/images/nested-vm1.qcow2'/>
+
+- Define the new VM:
+$ sudo virsh define /tmp/nested-vm1.xml
+
+- Start your new VM:
+$ sudo virsh start nested-vm1
+
+- Open a console:
+$ sudo virt-viewer --connect qemu:///system --wait <vm-name>
+
+Notes:
+    Always ensure VM names and UUIDs are unique.
+    Disk image files must match the paths specified in the VM XML.
+    Consider cleaning up or updating network settings inside the cloned VMs if necessary.

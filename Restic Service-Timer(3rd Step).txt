@@ -1,0 +1,53 @@
+- Create the shared Restic env file:
+$ sudo nano /etc/restic-env
+~ RESTIC_PASSWORD=PassPhras3	# for use w/o special characters or spaces
+~ RESTIC_PASSWORD='Pa$$ Phras3'	# for use w/ special charaters and spaces
+Save & Exit
+
+- Secure the file:
+$ sudo chown root:<group> /etc/restic-env
+$ sudo chmod 640 /restic/restic-env
+
+- Edit your restic service unit file:
+$ sudo nano /etc/systemd/system/restic-<service>.service
+
+- Modify:
+[Unit]
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+...
+...
+EnvironmentFile=/etc/restic-env
+ExecStart=/bin/bash -c '/usr/bin/restic backup /etc/named --repo /srv/backups/restic/<service>::$(date +%%Y-%%m-%%d-%%H%%M%%S) >> /srv/logs/restic-<service>.log 2>&1'
+Save & Exit
+
+
+- Create Service timer:
+$ sudo nano /etc/systemd/system/restic-<service>.timer
+
+[Unit]
+Description=Run Restic <service> backup daily
+
+[Timer]
+OnCalendar=02:40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+Save & Exit
+
+- Restart services
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable --now restic-<service>.timer
+
+- Verify services:
+$ sudo systemctl status restic-<service>.timer
+
+- Verify timers:
+$ sudo systemctl list-timers --all | grep restic
+
+- Verify logs for output:
+$ sudo tail -f /srv/logs/restic-<service>.log
+**Note:** - If no log output is present, don't panic.  Check the timer from the previous step.

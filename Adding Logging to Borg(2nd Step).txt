@@ -1,0 +1,43 @@
+- For security:
+
+$ touch /etc/borg-env
+~ BORG_PASSPHRASE=passphrase	# If no special characters
+~ BORG_PASSPHRASE='passphrase'	# For special characters and spaces
+
+$ sudo chown root:root /etc/borg-env
+$ sudo chmod 600 /etc/borg-env
+$ export BORG_PASSCOMMAND="cat /etc/borg-passphrase"
+
+
+> Where /etc/borg-passphrase is a 600 root:root file containing only 
+the passphrase. This way, the passphrase is not stored in an 
+environment variable at all — Borg reads it only when needed.
+
+
+- Modify the service file to add logging:
+
+$ sudo nano /etc/systemd/system/borg-<service>.service
+[Unit]
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+...
+...
+Groups=backups
+EnvironmentFile=/etc/borg-env
+ExecStart=/bin/bash -c '/usr/bin/borg create --stats /srv/backups/borg/<service>::$(date +%%Y-%%m-%%d-%%H%%M%%S) /etc/named >> /srv/logs/borg/<service>.log 2>&1' 	# Provides logging
+ExecStartPost=/bin/bash -c '/usr/bin/borg prune --list --keep-daily=7 --keep-weekly=4 --keep-monthly=6 /srv/backups/borg/<service>'
+
+
+Reload systemd:
+$ sudo systemctl daemon-reexec
+$ sudo systemctl restart borg-<service>.service
+
+- Verify log file creation:
+$ sudo ls -l /srv/logs/borg/<service>.log
+
+- Verify timers:
+$ sudo systemctl list-timers --all | grep borg
+
+

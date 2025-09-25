@@ -1,0 +1,113 @@
+
+********************REFERENCE FOR GITHUB.md FILE*************************************
+
+## Router Configuration for Subnet/VLAN
+
+#### For Enhanced Security Assign the Router to it's own Subnet
+
+- Create a VLAN interface ONLY for the routers management:
+$ sudo nmcli connection add type vlan con-name vlan## ifname enp1s0.## dev enp1s0 id ##
+
+- Assign a static IP:
+$ sudo nmcli connection add type ethernet ifname enp1s0.## con-name <unique-name>
+$ sudo nmcli connection modify vlan## ipv4.addresses <ip-address/mask>
+$ sudo nmcli connection modify vlan## ipv4.method manual
+$ sudo nmcli connection modify <unique-name> connection.autoconnect no
+$ sudo nmcli connection up vlan##
+
+**Note:** - Never use public DNS (8.8.8.8., or 1.1.1.1) on a server without internet access - the DNS queries will just fail
+> Use Cases:
+- Internal DNS server (e.g., AD, Pi-hole, dnsmasq)			192.168.10.5
+- Local gateway/router with DNS forwarding			192.168.10.1
+- Dedicated DNS server in the same VLAN				192.168.20.53
+
+#### VLANs and Subnets
+
+| VLAN Name	 | VLAN ID 	| Subnet		| Gateway IP	|
+| ------------------------- | ------------------------ | ------------------------- | -------------------------|
+| VLAN10		 | 10		| 192.168.10.0/24 	| 192.168.10.1 	|
+| VLAN20		 | 20		| 192.168.20.0/24 	| 192.168.20.1 	|
+| VLAN30		 | 30		| 192.168.30.0/24 	| 192.168.30.1 	|
+| VLAN40		 | 40		| 192.168.40.0/24 	| 192.168.40.1 	|
+| VLAN50		 | 50		| 192.168.50.0/24 	| 192.168.50.1 	|
+| VLAN60		 | 60		| 192.168.60.0/24 	| 192.168.60.1 	|
+
+#### Router VM VLAN Interfaces
+
+$ sudo nmcli connection add type vlan con-name vlan10 dev <name> id 10 ip4 192.168.10.1/24
+$ sudo nmcli connection add type vlan con-name vlan20 dev <name> id 20 ip4 192.168.20.1/24
+$ sudo nmcli connection add type vlan con-name vlan30 dev <name> id 30 ip4 192.168.30.1/24
+$ sudo nmcli connection add type vlan con-name vlan40 dev <name> id 40 ip4 192.168.40.1/24
+$ sudo nmcli connection add type vlan con-name vlan50 dev <name> id 50 ip4 192.168.50.1/24
+$ sudo nmcli connection add type vlan con-name vlan60 dev <name> id 60 ip4 192.168.60.1/24
+
+#### Activate VLAN Connections
+**Note:** - Parent connection will need to be active before bringing up the others
+$ sudo nmcli connection up vlan10
+$ sudo nmcli connection up vlan20
+$ sudo nmcli connection up vlan30
+$ sudo nmcli connection up vlan40
+$ sudo nmcli connection up vlan50
+$ sudo nmcli connection up vlan60
+
+#### Service VM VLAN Assignments and IPs
+
+| VM Name         	| VLAN Assigned       | IP Address       | Gateway       |
+| ------------------------- | ------------------------ | ------------------ | ---------------- |
+| SERVICE1-VM	| VLAN10		| 192.168.10.10 | 192.168.10.1 |
+| SERVICE2-VM	| VLAN20		| 192.168.20.10 | 192.168.20.1 |
+| SERVICE3-VM	| VLAN30		| 192.168.30.10 | 192.168.30.1 |
+| SERVICE4-VM	| VLAN40		| 192.168.40.10 | 192.168.40.1 |
+| SERVICE5-VM	| VLAN50		| 192.168.50.10 | 192.168.50.1 |
+| SERVICE6-VM	| VLAN60		| 192.168.60.10 | 192.168.60.1 |
+
+#### VM Interface Configuration Example
+
+$ sudo nmcli connection add type ethernet con-name vm-static-vlan10 ifname ens3 master vlan10 ip4 192.168.10.10/24 gw4 192.168.10.1
+$ sudo nmcli connection up vm-static-vlan10
+
+#### Connectivity Verification
+
+- From the router VM:
+> Verify your firewall rules allow for ICMP requests, if needed.
+$ ip a
+$ ip route
+$ ping 192.168.10.10
+$ ping 192.168.20.10
+
+From a VM:
+
+$ ping 192.168.10.1
+
+- Remove unwanted virtual connections:
+$ sudo nmcli connection show
+$ sudo nmcli connection delete "interface name"
+$ sudo ip link delete <interface>
+$ sudo ip link show 
+
+- Verify interface-to-zone assignments:
+$ sudo firewall-cmd --get-active-zones
+> if theres no output, firewall isn't forwarding traffic
+
+- Assign interfaces to zones:
+$ sudo firewall-cmd --zone=internal --add-interface=<device-name> --permanent	# 1 vlan interface enpxx.## per zone configuration
+$ sudo firewall-cmd --reload
+
+- Verify forwarding is allowed:
+$ sudo firewall-cmd --zone=internal --query-masquerade
+
+
+- On the clients set the following information for subnet communication:
+$ sudo ip link add link enp1s0 name enp1s0.## type vlan id ##
+$ sudo ip addr add <client|server-ip/mask> dev enp1s0.##
+$ sudo route add default via <gateway-ip>
+$ sudo ip link set enp1s0.## up
+
+- Configure rich rules to allow cross subnet communication:
+$ sudo ip route add <subnet-address/mask> via <gateway-ip> 
+> the <subnet-address> is the network address of server 2 (i.e. 192.168.0.0/24) in this format
+> the <gateway-ip> is the outgoing address server 1 uses  (i.e. 192.168.0.1) in this format
+$ sudo nano /etc/hosts
+> add your network host to the list
+Save & Quit
+
