@@ -1,0 +1,21 @@
+For creating live snapshots of servers
+
+> Disk only snapshot:
+$ sudo virsh snapshot-create-as --domain <vm> \
+-- name "snapshot 1" \
+--description "Anything significant" \
+--disk-only --atomic
+
+
+> Disk + RAM snapshot
+$ sudo virsh snapshot-create-as --domain <vm> \
+-- name "snapshot 1" \
+--description "Anything significant" \
+--live
+
+
+- Verify snapshots:
+$ sudo virsh snapshot-list <vm>
+
+- Restore snapshots:
+$ sudo virsh snapshot-revert <vm> --snapshotname "snapshot 1"
