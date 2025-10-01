@@ -1,0 +1,361 @@
+# Podman/Podman-Docker System Administration Guide (RHEL 9)
+
+As a system administrator using Podman/Podman-Docker on RHEL 9, you don’t need to be a developer, but you do need to know several operational, security, and maintenance aspects.
+
+---
+
+## 1. Installation & Configuration
+
+- Podman replaces Docker; you can install `podman-docker` to use Docker CLI commands.
+- Key packages: `podman`, `podman-docker`, `podman-compose`, `buildah`, `skopeo`.
+- Configure registries properly (`/etc/containers/registries.conf`) to avoid short-name prompts and v1/v2 conflicts.
+- Understand storage drivers and rootless vs rootful containers.
+- SELinux policies: containers may need `:Z` or `:z` for mounted volumes.
+
+### Installation Commands
+
+```bash
+sudo dnf update -y
+sudo dnf install -y dnf-plugins-core
+sudo dnf module enable -y container-tools:latest
+sudo dnf install -y podman
+sudo dnf install -y podman-docker
+sudo dnf install -y podman-compose
+sudo dnf install -y buildah skopeo
+
+# Verify installations
+podman --version
+docker --version
+podman-compose --version
+buildah --version
+skopeo --version
+Configure Registries
+Edit /etc/containers/registries.conf:
+
+ini
+Copy code
+[registries.search]
+registries = ["registry.access.redhat.com", "registry.redhat.io", "docker.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+Test registry access:
+
+bash
+Copy code
+docker pull docker.io/library/hello-world:latest
+Storage Drivers
+bash
+Copy code
+podman info | grep "GraphDriver"
+sudo vi /etc/containers/storage.conf   # Optional: change storage driver
+Rootless vs Rootful Containers
+bash
+Copy code
+# Rootless
+podman info | grep rootless
+podman run --rm docker.io/library/hello-world:latest
+
+# Rootful
+sudo podman run --rm docker.io/library/hello-world:latest
+SELinux Labels for Volumes
+bash
+Copy code
+docker run -d --name nginx \
+  -v /host/nginx/conf:/etc/nginx:Z \
+  -v /host/nginx/html:/usr/share/nginx/html:Z \
+  docker.io/library/nginx:alpine
+2. Container Lifecycle Management
+Pull images from trusted registries.
+
+Run containers with proper naming, port mapping, and volume mounts.
+
+Stop/start/remove containers.
+
+Use volumes to preserve persistent data.
+
+Automatic start via systemd.
+
+Commands
+bash
+Copy code
+# Pull image
+docker pull docker.io/library/nginx:alpine
+
+# Run container with ports and volumes
+docker run -d --name nginx -p 8080:80 \
+  -v /host/nginx/conf:/etc/nginx:Z \
+  -v /host/nginx/html:/usr/share/nginx/html:Z \
+  nginx:alpine
+
+# Stop container
+docker stop nginx
+
+# Start container
+docker start nginx
+
+# Remove container
+docker rm nginx
+
+# Force remove running container
+docker rm -f nginx
+
+# Generate systemd service
+podman generate systemd --name nginx --files --new
+sudo mv container-nginx.service /etc/systemd/system/
+sudo systemctl enable --now container-nginx
+
+# Inspect container
+docker inspect nginx
+
+# View logs
+docker logs nginx
+
+# Cleanup unused containers/images/networks/volumes
+docker system prune -a
+3. Networking
+Modes: bridge (default), host, macvlan, none, custom.
+
+Map host ports carefully (-p host:container) to avoid conflicts.
+
+Use custom networks for multi-container apps and internal DNS.
+
+Consider firewall and SELinux.
+
+Monitor network performance and troubleshoot.
+
+Commands
+bash
+Copy code
+# List networks
+docker network ls
+
+# Inspect network
+docker network inspect <network_name>
+
+# Create custom network
+docker network create internal_net
+
+# Remove network
+docker network rm <network_name>
+
+# Run container on default network
+docker run -d --name web nginx:alpine
+
+# Run container on custom network
+docker run -d --name db --network internal_net -e POSTGRES_PASSWORD=secret postgres:15
+
+# Ping between containers
+docker exec -it web ping db
+
+# Map host port to container port
+docker run -d --name nginx -p 8080:80 nginx:alpine
+
+# Run container with custom DNS
+docker run -d --dns 8.8.8.8 --dns 8.8.4.4 nginx:alpine
+
+# Allow host port through firewall
+sudo firewall-cmd --add-port=8080/tcp --permanent
+sudo firewall-cmd --reload
+firewall-cmd --list-ports
+
+# Mount host directory with SELinux label
+docker run -v /host/path:/container/path:Z -d nginx
+
+# Check container IP/network
+docker exec -it <container_name> ip addr
+
+# Inspect custom network connections
+docker network inspect internal_net
+
+# View container logs for network issues
+docker logs <container_name>
+journalctl -u podman
+
+# Monitor networking
+docker stats <container_name>
+docker network ls
+docker network inspect <network_name>
+4. Monitoring & Logging
+bash
+Copy code
+# View logs
+docker logs <container_name_or_id>
+
+# Follow logs in real-time
+docker logs -f <container_name_or_id>
+
+# Live CPU, memory, I/O usage
+docker stats <container_name_or_id>
+docker stats  # all containers
+
+# Inspect container metadata and network info
+docker inspect <container_name_or_id>
+
+# Track disk usage
+docker system df
+
+# Monitor with cAdvisor
+docker run -d --name=cadvisor -p 8080:8080 \
+  --volume=/:/rootfs:ro \
+  --volume=/var/run:/var/run:ro \
+  --volume=/sys:/sys:ro \
+  --volume=/var/lib/docker/:/var/lib/docker:ro \
+  gcr.io/cadvisor/cadvisor:latest
+
+# Example Prometheus scrape target:
+# http://<host_ip>:8080/metrics
+5. Security Management
+bash
+Copy code
+# Run rootless container
+podman run -d --name nginx -p 8080:80 nginx:alpine
+
+# Limit capabilities
+docker run -d --name nginx --cap-drop ALL -p 8080:80 nginx:alpine
+
+# Pull signed/trusted images
+docker pull docker.io/library/nginx:alpine
+
+# SELinux label for mounted volumes
+docker run -v /host/path:/container/path:Z -d nginx
+
+# Read-only filesystem
+docker run --read-only -d --name nginx -p 8080:80 nginx:alpine
+
+# Verify SELinux/AppArmor
+podman info | grep -i selinux
+sudo aa-status
+
+# Docker socket access
+ls -l /var/run/docker.sock
+sudo chmod 660 /var/run/docker.sock
+sudo chown root:docker /var/run/docker.sock
+
+# Run internal-only service
+docker run -d --name internal_service nginx:alpine
+
+# Security scan
+docker scan nginx:alpine
+trivy image nginx:alpine
+6. Image Management
+bash
+Copy code
+# Tag/version images
+docker tag nginx:alpine myrepo/nginx:v1.0
+
+# Remove unused containers/images/networks/volumes
+docker system prune -a
+
+# Scan images
+docker scan nginx:alpine
+trivy image nginx:alpine
+
+# Update images
+docker pull docker.io/library/nginx:alpine
+
+# Redeploy container
+docker stop nginx
+docker rm nginx
+docker run -d --name nginx -p 8080:80 nginx:alpine
+7. Automation & Integration
+bash
+Copy code
+# Cron job: update container daily
+0 2 * * * /usr/bin/docker pull docker.io/library/nginx:alpine && \
+/usr/bin/docker stop nginx && /usr/bin/docker rm nginx && \
+/usr/bin/docker run -d --name nginx -p 8080:80 nginx:alpine
+
+# Cron job: cleanup unused containers/images
+0 3 * * * /usr/bin/docker system prune -a -f
+
+# Cron job: backup container volumes
+0 1 * * * tar czf /backup/nginx_conf_$(date +%F).tar.gz /host/nginx/conf
+0 1 * * * tar czf /backup/nginx_html_$(date +%F).tar.gz /host/nginx/html
+
+# Multi-container apps
+docker-compose up -d
+podman-compose up -d
+
+# View logs
+podman-compose logs -f
+
+# Jenkinsfile integration example
+pipeline {
+    agent any
+    stages {
+        stage('Pull & Deploy') {
+            steps {
+                sh 'docker pull docker.io/library/nginx:alpine'
+                sh 'docker stop nginx || true'
+                sh 'docker rm nginx || true'
+                sh 'docker run -d --name nginx -p 8080:80 nginx:alpine'
+            }
+        }
+    }
+}
+
+# Rsync for backup
+rsync -av /host/nginx/html/ user@backupserver:/backup/nginx/html/
+8. Backup & Recovery
+bash
+Copy code
+# Daily backup: critical persistent data
+0 2 * * * tar czf /backup/nginx_html_$(date +%F).tar.gz /host/nginx/html
+0 2 * * * tar czf /backup/nginx_conf_$(date +%F).tar.gz /host/nginx/conf
+0 3 * * * tar czf /backup/postgres_data_$(date +%F).tar.gz /host/pgdata
+
+# Weekly backup: non-critical config files
+0 3 * * 0 tar czf /backup/config_weekly_$(date +%F).tar.gz /etc/nginx /etc/myapp
+
+# Test recovery monthly
+tar xzf /backup/nginx_html_YYYY-MM-DD.tar.gz -C /test_restore/html
+
+# Off-host backup
+rsync -av /backup/ user@nas-server:/backup/
+aws s3 cp /backup/nginx_html_$(date +%F).tar.gz s3://mybucket/nginx_html/
+9. Day-to-Day Admin Tasks
+bash
+Copy code
+# Start/stop/restart container
+docker start <container_name>
+docker stop <container_name>
+docker restart <container_name>
+
+# Monitor logs
+docker logs -f <container_name>
+
+# Live resource usage
+docker stats <container_name>
+
+# Pull and update images
+docker pull docker.io/library/nginx:alpine
+
+# Redeploy container
+docker stop nginx
+docker rm nginx
+docker run -d --name nginx -p 8080:80 nginx:alpine
+
+# Cleanup
+docker system prune -a
+
+# Backup persistent volumes
+tar czf /backup/nginx_html_$(date +%F).tar.gz /host/nginx/html
+tar czf /backup/nginx_conf_$(date +%F).tar.gz /host/nginx/conf
+
+# Troubleshoot networking
+docker exec -it <container_name> ip addr
+docker exec -it <container_name> ping <other_container>
+docker network ls
+docker network inspect <network_name>
+
+# Inspect storage/runtime errors
+docker inspect <container_name>
+docker logs <container_name>
+docker system df
+
+# Document container setups/volume mappings
+docker ps --format "{{.Names}}: {{.Mounts}}" > container_volumes.txt
